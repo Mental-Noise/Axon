@@ -1,47 +1,59 @@
-# midi2cv
+# WORK IN PROGRESS
 
-<img src="/images/IMG_0776.JPG" alt="midi2cv" width="400"> <img src="/images/IMG_0777.JPG" alt="midi2cv" width="400">
+Do not use for now!
 
-This repository contains the code and schematic for a DIY MIDI to CV converter.  I installed this converter into a home-built analog synthesizer, allowing me to play the synthesizer with my Yamaha CP50 keyboard over MIDI.
+# Mental Noise - Axon - MIDI to CV Eurorack module
 
-The MIDI to CV converter includes the following outputs:
+This repository contains the code and schematics (EasyEDA format) for the Mental Noise - Axon Eurorack module converting MIDI commands to CV signals you can use to control your Eurorack synth.
 
-* Note CV output (88 keys, 1V/octave) using a 12-bit DAC
-* Note priority (highest note, lowest note, or last note) selectable with jumper or 3-way switch
-* Pitch bend CV output (0.5 +/-0.5V)
-* Velocity CV output (0 to 4V)
-* Control Change CV outout (0 to 4V)
-* Trigger output (5V, 20 msec pulse for each new key played)
-* Gate output (5V when any key depressed)
-* Clock output (1 clock per quarter note, 20 msec 5V pulses)
+I originally made this module to control my modular synth with an Arturia Keystep Pro.  
+It is based on the [MIDI2CV project](https://github.com/elkayem/midi2cv) by [Larry McGovern](https://github.com/elkayem).
 
-## Parts
-* Arduino Nano
-* Optocoupler (I used a Vishay SFH618A, but there are plenty of alternatives out there)
-* 2x MCP4822 12-bit DACs
-* LM324N Quad Op Amp 
-* Diode (e.g., 1N917)
-* 220, 500, 3x1K, 7.7K (3K+4.7K), 10K Ohm resistors
-* 3x 0.1 uF ceramic capacitors
-* 5 pin MIDI jack
-* 7x 4mm banana plug jacks
-* 3-pin header and jumper *or* 3-way switch
+The Arduino code uses the standard [MIDI library](https://github.com/FortySevenEffects/arduino_midi_library/blob/master/src/MIDI.h) which can be found in the Arduino Library Manager.
 
-The Arduino code uses the standard MIDI and SPI libraries, which can be found in the Arduino Library Manager. 
+The code is written to allow easy customization but it should cover most cases out of the box.
 
-The schematic is illustrated at the bottom of this page (Eagle file included).  Input power (VIN) is 9-12V.  This is required for the Note CV op amp, used for the 0-7.3V note output.  1% metal film resistors are recommended for the 7.7K and 10K resistors, for a constant op-amp gain that does not change with temperature.  Note that 7.7K is not a standard resistor value.  I used a 3K and a 4.7K resistor in series, which are much more common values.  If precise tuning is desired, a trim pot can be added *or* the constant NOTE_SF can be adjusted in the code.  I opted for the latter.
+## Module available on Tindie
 
-Note priority is selected using a jumper attached to the three-pin header labelled NP_SEL in the schematic.  This header connects to the Arduino pins A0 and A2, with the center pin attached to ground.  Alternatively, a 3-way switch can be attached to this header. 
+As I would love for anyone who wants to use this module to be able to, I'm selling it fully assembled on [Tindie](https://www.tindie.com/stores/mentalnoise/).
 
-The note priority options and jumper configuration are as follows:
-* **Highest Note:** When multiple notes are sounded simultaneously, the highest note being held will be sounded.  When the highest note is released, the next highest note will be played, and so on.  Remove the NP_SEL jumper to select this configuration.
-* **Lowest Note:** Analagous to highest note, except the lowest note being held will be sounded. Connect the NP_SEL jumper to the A0 pin and center pin (ground) to select this configuration. 
-* **Last Note:** The most recent note played will be sounded.  When that note is released, the next most recent note still being held will be sounded.  Connect the NP_SEL jumper to the A2 pin and center pin (ground) to select this configuration.  The illustration below shows the jumper configuration for the Last Note setting.
+The goal is not to make lot of benefits on this module, I'm already making it available for free here but if you don't have the skills to do it yourself with all the sources available here then it's a good way for you to get one!
 
-<img src="/images/IMG_1884.JPG" alt="jumper" width="300">
+## Specifications
 
-<img src="/images/schematic.JPG" alt="schematic" width="800">
+This module is designed to be used in an Eurorack system, it requires a +12V and a ground connection to the power supply.   
+If using a 16 to 16 pins eurorack cable, you have the possibility to share the note and the gate on the power bus with compatible modules.
 
+The dimensions are:
+- Width: 6HP
+- Height: 3U
+- Depth: 40mm
 
+The output have different specification:
+- Note: 88 keys, 1V/octave using a 12-bit DAC
+- Velocity: 0 to 4V
+- Control Change: 0 to 4V
+- Pitch Bend: 0.5 +/-0.5V
+- Gate: 5V for the duration of the key press
+- Trigger: 5V for 20ms for each key press
+- Clock: 5V for 20ms each quarter note
 
+This module is connected to your MIDI controler using a MIDI cable (5-pin DIN connector).  
+The MIDI channel can be selected using 4 DIP switches on the back of the module.
 
+The note priority can be selected using a 3-way switch on the back of the module (last, highesht, lowest).
+
+The note output can be calibrated using a trim pot accessible on the front of the module.
+
+## Schematics
+
+All schematics are available in the [schematics folder](https://github.com/atulrnt/mental-noise-axon/tree/main/schematics).
+
+To import the schematics:  
+
+* Install EasyEDA at [https://easyeda.com/](https://easyeda.com/) and download the standard edition
+* Import the schematics in EasyEDA editor by clicking the document icon on the topbar, "Document" > "Open" > "EasyEDA Source", and select the json file
+
+![Mental Noise - Axon - Schematics](schematics/1_full.png "Mental Noise - Axon - Schematics")
+
+Enjoy!

@@ -51,6 +51,9 @@
 #define CALIBRATION_DEFAULT 47.069f
 #define CALIBRATION_EEPROM 0
 
+// Switch used to enable or disabled pitch bend addition to note
+#define PITCH_BEND_SWITCH 2
+
 // Output
 #define GATE  5
 #define CLOCK 4
@@ -81,6 +84,7 @@
 #define DAC_GAIN_PITCH_BEND 0x2000
 #define DAC_GAIN_VELOCITY 0x0000
 
+volatile bool addPitchBend{false};
 bool isCalibrationActive{false};
 float calibrationValue{-1};
 bool notes[88]{}; 
@@ -91,8 +95,7 @@ bool (*noteCommand)(int);
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 
-void setup() 
-{
+void setup() {
   pinMode(GATE, OUTPUT);
   pinMode(TRIG, OUTPUT);
   pinMode(CLOCK, OUTPUT);
@@ -105,23 +108,22 @@ void setup()
   digitalWrite(DAC1, HIGH);
   digitalWrite(DAC2, HIGH);
 
+  SPI.begin();
+
   initCalibration();
   initNotePriority();
+  initPitchBend();
 
-  SPI.begin();
   MIDI.begin(getMidiChannel());
-
-  // Set initial pitch bend value (0-127) to mid point
-  handlePitchBend(64);
 }
 
-int getMidiChannel() 
-{
+int getMidiChannel() {
   int channel{1};
   int pins[] = {MIDI_CHANNEL_1, MIDI_CHANNEL_2, MIDI_CHANNEL_3, MIDI_CHANNEL_4};
 
   for (int i = 0; i < 4; i++) {
     pinMode(pins[i], INPUT_PULLUP);
+
     channel |= (digitalRead(pins[i]) << i);
 
     // Release internal pull-up resistor
@@ -131,8 +133,7 @@ int getMidiChannel()
   return channel;
 }
 
-void initNotePriority()
-{
+void initNotePriority() {
   pinMode(NOTE_PRIORITY_1, INPUT_PULLUP);
   pinMode(NOTE_PRIORITY_2, INPUT_PULLUP);
 
@@ -149,8 +150,7 @@ void initNotePriority()
   pinMode(NOTE_PRIORITY_2, INPUT);
 }
 
-void initCalibration()
-{
+void initCalibration() {
   pinMode(CALIBRATION_SWITCH, INPUT);
 
   if (digitalRead(CALIBRATION_SWITCH)) {
@@ -167,8 +167,21 @@ void initCalibration()
   }
 }
 
-void loop()
-{
+void initPitchBendSwitch() {
+  pinMode(PITCH_BEND_SWITCH, INPUT_PULLUP);
+
+  addPitchBend = digitalRead(PITCH_BEND_SWITCH);
+
+  // Attach an interrupt to add or remove pitch bend to note when the switch state changes
+  attachInterrupt(digitalPinToInterrupt(PITCH_BEND_SWITCH), []{
+    addPitchBend = digitalRead(PITCH_BEND_SWITCH) == HIGH;
+  }, CHANGE);
+
+  // Set initial pitch bend value (0-127) to mid point
+  handlePitchBend(64);
+}
+
+void loop() {
   static unsigned long clockTimer = 0;
   static unsigned int clockCount = 0;
 
@@ -210,8 +223,7 @@ void loop()
   }
 }
 
-void handlePitchBend(int value)
-{
+void handlePitchBend(int value) {
   // Value from 0 to 127, mid point = 64
   // Pitch bend output from 0 to 1023 mV.
   // Left shift value by 4 to scale from 0 to 2047.
@@ -219,16 +231,14 @@ void handlePitchBend(int value)
   setVoltage(DAC_PIN_PITCH_BEND, DAC_CHAN_PITCH_BEND, DAC_GAIN_PITCH_BEND, value << 4);
 }
 
-void handleControlChange(int value)
-{
+void handleControlChange(int value) {
   // Value from 0 to 127
   // CC range from 0 to 4095 mV.
   // Left shift value by 5 to scale from 0 to 4095, and choose gain = 2X.
   setVoltage(DAC_PIN_CONTROL_CHANGE, DAC_CHAN_CONTROL_CHANGE, DAC_GAIN_CONTROL_CHANGE, value << 5);
 }
 
-void handleClock(long& clockTimer, int& clockCount)
-{
+void handleClock(long& clockTimer, int& clockCount) {
   static unsigned long clockTimeout = 0;
 
   // Prevents Clock from starting in between quarter notes after clock is restarted!
@@ -251,10 +261,9 @@ void handleClock(long& clockTimer, int& clockCount)
   }
 }
 
-void handleNote(int note, int velocity)
-{
+void handleNote(int note, int velocity) {
   // Only 88 notes of keyboard are supported
-  if ((note < 0) || (note > 87)) {
+  if (note < 0 || note > 87) {
     return;
   }
 
@@ -273,66 +282,64 @@ void handleNote(int note, int velocity)
     notesOrder[orderIndex] = note;  
   }
 
-  if (!noteCommand(note)) {
-    // All notes are off, turn off gate
-    digitalWrite(GATE, LOW);  
+  int noteOutput = noteCommand(note);
+
+  if (noteOutput == -1) {
+    digitalWrite(GATE, LOW);
+    return;
   }
+
+  outputNote(noteOutput);
 }
 
-bool highestNoteCommand(int note)
-{
+bool highestNoteCommand(int note) {
   int highestNote = 0;
-  bool noteActive = false;
+  bool isNoteActive = false;
 
   for (int i = note; i < 88; i++) {
     if (notes[i]) {
       highestNote = i;
-      noteActive = true;
+      isNoteActive = true;
     }
   }
 
-  if (!noteActive) {
-    return false;
+  if (!isNoteActive) {
+    return -1;
   }
 
-  outputNote(highestNote);
-  return true;
+  return highestNote;
 }
 
-bool lowestNoteCommand(int note)
-{
+bool lowestNoteCommand(int note) {
   int bottomNote = 0;
-  bool noteActive = false;
+  bool isNoteActive = false;
 
   for (int i = note; i >= 0; i--) {
     if (notes[i]) {
       bottomNote = i;
-      noteActive = true;
+      isNoteActive = true;
     }
   }
 
-  if (!noteActive) {
-    return false;
+  if (!isNoteActive) {
+    return -1;
   }
 
-  outputNote(bottomNote);
-  return true;
+  return bottomNote;
 }
 
-bool lastNodeCommand(int note)
-{
+bool lastNodeCommand(int note) {
   int8_t noteIndex;
   
   for (int i = 0; i < 20; i++) {
     noteIndex = notesOrder[ mod(orderIndex - i, 20) ];
 
     if (notes[noteIndex]) {
-      outputNote(noteIndex);
-      return true;
+      return noteIndex;
     }
   }
 
-  return false;
+  return -1;
 }
 
 /*
@@ -342,13 +349,13 @@ bool lastNodeCommand(int note)
  * DAC output will be (4095/87) = 47.069 mV per note, and 564.9655 mV per octive
  * Note that DAC output will need to be amplified by 1.77X for the standard 1V/octave 
  */
-void outputNote(int noteNumber)
-{
+void outputNote(int noteNumber) {
   digitalWrite(GATE, HIGH);
   digitalWrite(TRIG, HIGH);
+
   triggerTimer = millis();
-  
-  unsigned int mV = (unsigned int) ((float) noteNumber * getNoteCalibration() + 0.5); 
+  unsigned int mV = (unsigned int) ((float) (noteNumber * getNoteCalibration() + 0.5) + (addPitchBend ? value << 3 : 0));
+
   setVoltage(DAC_PIN_NOTE, DAC_CHAN_NOTE, DAC_GAIN_NOTE, mV);
 }
 
@@ -360,8 +367,7 @@ void outputNote(int noteNumber)
  * mV: integer 0 to 4095.  If gain is 1X, mV is in units of half mV (i.e., 0 to 2048 mV).
  * If gain is 2X, mV is in units of mV
  */
-void setVoltage(int dacpin, unsigned int command, unsigned int gain, unsigned int mV)
-{
+void setVoltage(int dacpin, unsigned int command, unsigned int gain, unsigned int mV) {
   command |= gain;
   command |= (mV & 0x0FFF);
   
@@ -374,8 +380,7 @@ void setVoltage(int dacpin, unsigned int command, unsigned int gain, unsigned in
 }
 
 // Get calibration value for the note mV multiplier
-float getNoteCalibration()
-{
+float getNoteCalibration() {
   if (!isCalibrationActive) {
     return calibrationValue;
   }
@@ -401,8 +406,7 @@ float getNoteCalibration()
   return lastCalibrationValue;
 }
 
-int mod(int a, int b)
-{
+int mod(int a, int b) {
   int r = a % b;
   return r < 0 ? r + b : r;
 }

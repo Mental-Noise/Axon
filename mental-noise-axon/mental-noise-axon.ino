@@ -119,13 +119,13 @@ void setup() {
 
 int getMidiChannel() {
   int channel{1};
-  int pins[] = {MIDI_CHANNEL_1, MIDI_CHANNEL_2, MIDI_CHANNEL_3, MIDI_CHANNEL_4};
+  int pins[]{MIDI_CHANNEL_4, MIDI_CHANNEL_3, MIDI_CHANNEL_2, MIDI_CHANNEL_1};
 
   for (int i = 0; i < 4; i++) {
     pinMode(pins[i], INPUT_PULLUP);
-
-    channel |= (digitalRead(pins[i]) << i);
-
+    
+    channel += (1 << i) * !digitalRead(pins[i]);
+    
     // Release internal pull-up resistor
     pinMode(pins[i], INPUT);
   }

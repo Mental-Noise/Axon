@@ -84,38 +84,18 @@
 #define DAC_GAIN_PITCH_BEND 0x2000
 #define DAC_GAIN_VELOCITY 0x0000
 
+#define DEBUG true
+
 volatile bool addPitchBend{false};
 bool isCalibrationActive{false};
 float calibrationValue{-1};
-bool notes[88]{}; 
+bool notes[88] = {false}; 
 int8_t notesOrder[20]{};
 int8_t orderIndex{};
 unsigned long triggerTimer{};
 bool (*noteCommand)(int);
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-
-void setup() {
-  pinMode(GATE, OUTPUT);
-  pinMode(TRIG, OUTPUT);
-  pinMode(CLOCK, OUTPUT);
-  pinMode(DAC1, OUTPUT);
-  pinMode(DAC2, OUTPUT);
-
-  digitalWrite(GATE, LOW);
-  digitalWrite(TRIG, LOW);
-  digitalWrite(CLOCK, LOW);
-  digitalWrite(DAC1, HIGH);
-  digitalWrite(DAC2, HIGH);
-
-  SPI.begin();
-
-  initCalibration();
-  initNotePriority();
-  initPitchBend();
-
-  MIDI.begin(getMidiChannel());
-}
 
 int getMidiChannel() {
   int channel{1};
@@ -139,9 +119,9 @@ void initNotePriority() {
 
   noteCommand = lastNodeCommand;
 
-  if (digitalRead(NOTE_PRIORITY_1)) {
+  if (!digitalRead(NOTE_PRIORITY_1)) {
     noteCommand = highestNoteCommand;
-  } else if (digitalRead(NOTE_PRIORITY_2)) {
+  } else if (!digitalRead(NOTE_PRIORITY_2)) {
     noteCommand = lowestNoteCommand;
   }
 
@@ -175,52 +155,14 @@ void initPitchBendSwitch() {
   // Attach an interrupt to add or remove pitch bend to note when the switch state changes
   attachInterrupt(digitalPinToInterrupt(PITCH_BEND_SWITCH), []{
     addPitchBend = digitalRead(PITCH_BEND_SWITCH) == HIGH;
+
+    if (DEBUG) {
+      Serial.println(addPitchBend ? "Enabled" : "Disabled");
+    }
   }, CHANGE);
 
   // Set initial pitch bend value (0-127) to mid point
   handlePitchBend(64);
-}
-
-void loop() {
-  static unsigned long clockTimer = 0;
-  static unsigned int clockCount = 0;
-
-  if ((triggerTimer > 0) && (millis() - triggerTimer > TRIGGER_DURATION)) { 
-    // Set trigger low after 20 msec
-    digitalWrite(TRIG, LOW);
-    triggerTimer = 0;  
-  }
-
-  if ((clockTimer > 0) && (millis() - clockTimer > CLOCK_DURATION)) { 
-    // Set clock pulse low after 20 msec 
-    digitalWrite(CLOCK, LOW);
-    clockTimer = 0;
-  }
-  
-  if (!MIDI.read()) {
-    continue;
-  }
-
-  switch (MIDI.getType()) {
-    case midi::NoteOn:
-      handleNote(MIDI.getData1() - 21, MIDI.getData2());
-
-    case midi::NoteOff:
-      handleNote(MIDI.getData1() - 21, 0);
-      break;
-      
-    case midi::PitchBend:
-      handlePitchBend(MIDI.getData2());      
-      break;
-
-    case midi::ControlChange:
-      handleControlChange(MIDI.getData2());
-      break;
-      
-    case midi::Clock:
-      handleClock(clockTimern, clockCount);
-      break;
-  }
 }
 
 void handlePitchBend(int value) {
@@ -238,7 +180,7 @@ void handleControlChange(int value) {
   setVoltage(DAC_PIN_CONTROL_CHANGE, DAC_CHAN_CONTROL_CHANGE, DAC_GAIN_CONTROL_CHANGE, value << 5);
 }
 
-void handleClock(long& clockTimer, int& clockCount) {
+void handleClock(long clockTimer, int clockCount) {
   static unsigned long clockTimeout = 0;
 
   // Prevents Clock from starting in between quarter notes after clock is restarted!
@@ -283,6 +225,11 @@ void handleNote(int note, int velocity) {
   }
 
   int noteOutput = noteCommand(note);
+
+  if (DEBUG) {
+    Serial.print("Note : ");
+    Serial.println(noteOutput);
+  }
 
   if (noteOutput == -1) {
     digitalWrite(GATE, LOW);
@@ -354,7 +301,7 @@ void outputNote(int noteNumber) {
   digitalWrite(TRIG, HIGH);
 
   triggerTimer = millis();
-  unsigned int mV = (unsigned int) ((float) (noteNumber * getNoteCalibration() + 0.5) + (addPitchBend ? value << 3 : 0));
+  unsigned int mV = (unsigned int) (float) (noteNumber * getNoteCalibration() + 0.5);// + (addPitchBend ? value << 3 : 0));
 
   setVoltage(DAC_PIN_NOTE, DAC_CHAN_NOTE, DAC_GAIN_NOTE, mV);
 }
@@ -409,4 +356,106 @@ float getNoteCalibration() {
 int mod(int a, int b) {
   int r = a % b;
   return r < 0 ? r + b : r;
+}
+
+void setup() {
+  pinMode(GATE, OUTPUT);
+  pinMode(TRIG, OUTPUT);
+  pinMode(CLOCK, OUTPUT);
+  pinMode(DAC1, OUTPUT);
+  pinMode(DAC2, OUTPUT);
+
+  digitalWrite(GATE, LOW);
+  digitalWrite(TRIG, LOW);
+  digitalWrite(CLOCK, LOW);
+  digitalWrite(DAC1, HIGH);
+  digitalWrite(DAC2, HIGH);
+
+  if (DEBUG) {
+    Serial.begin(31250);
+  }
+
+  SPI.begin();
+
+  initCalibration();
+  initNotePriority();
+  initPitchBendSwitch();
+
+  MIDI.begin(getMidiChannel());
+  MIDI.turnThruOff();
+}
+
+void loop() {
+  static unsigned long clockTimer = 0;
+  static unsigned int clockCount = 0;
+  static bool captureNoteOff = false;
+
+  if ((triggerTimer > 0) && (millis() - triggerTimer > TRIGGER_DURATION)) { 
+    // Set trigger low after 20 msec
+    digitalWrite(TRIG, LOW);
+    triggerTimer = 0;  
+  }
+
+  if ((clockTimer > 0) && (millis() - clockTimer > CLOCK_DURATION)) { 
+    // Set clock pulse low after 20 msec 
+    digitalWrite(CLOCK, LOW);
+    clockTimer = 0;
+  }
+  
+  if (!MIDI.read()) {
+    return;
+  }
+
+  switch (MIDI.getType()) {
+    case midi::NoteOn:
+      if (DEBUG) {
+        Serial.print("Note on : ");
+        Serial.print(MIDI.getData1());
+        Serial.print(" - ");
+        Serial.println(MIDI.getData2());
+      }
+
+      handleNote(MIDI.getData1() - 21, MIDI.getData2());
+
+    case midi::NoteOff:
+      if (!captureNoteOff) {
+        captureNoteOff = true;
+        break;
+      }
+
+      if (DEBUG) {
+        Serial.print("Note off : ");
+        Serial.println(MIDI.getData1());
+      }
+
+      handleNote(MIDI.getData1() - 21, 0);
+      captureNoteOff = false;
+      break;
+      
+    case midi::PitchBend:
+      if (DEBUG) {
+        Serial.print("Pitch bend : ");
+        Serial.println(MIDI.getData2());
+      }
+
+      handlePitchBend(MIDI.getData2());      
+      break;
+
+    case midi::ControlChange:
+      if (DEBUG) {
+        Serial.print("Control change : ");
+        Serial.println(MIDI.getData2());
+      }
+
+      handleControlChange(MIDI.getData2());
+      break;
+      
+    case midi::Clock:
+      if (DEBUG) {
+        Serial.println("Clock");
+      }
+
+      handleClock(clockTimer, clockCount);
+      break;
+  }
 }

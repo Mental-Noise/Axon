@@ -442,7 +442,7 @@ void loop() {
     case midi::NoteOn:
       note = MIDI.getData1() - 21;
 
-      dd("Note ON : " + String(MIDI.getData1()) + " (" + note + ") - " + String(MIDI.getData2()));
+      dd("Note ON : " + String(MIDI.getData1()) + " (" + String(note) + ") - " + String(MIDI.getData2()));
       handleNote(note, MIDI.getData2());
       break;
 

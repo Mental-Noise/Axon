@@ -203,7 +203,6 @@ void initPitchBendSwitch() {
     } else {
       dd("Add pitch bend : disabled");
     }
-    
   }, CHANGE);
 
   // Set initial pitch bend value (0-127) to mid point
@@ -419,7 +418,6 @@ void setup() {pinMode(GATE, OUTPUT);
 }
 
 void loop() {
-  static bool captureNoteOff[88] = {}; 
   now = millis();
 
   // Set trigger low after TRIGGER_DURATION
@@ -446,19 +444,13 @@ void loop() {
 
       dd("Note ON : " + String(MIDI.getData1()) + " (" + note + ") - " + String(MIDI.getData2()));
       handleNote(note, MIDI.getData2());
+      break;
 
     case midi::NoteOff:
       note = MIDI.getData1() - 21;
 
-      // Skip note off instantly triggered after note on
-      if (!captureNoteOff[note]) {
-        captureNoteOff[note] = true;
-        break;
-      }
-
       dd("Note OFF : " + String(MIDI.getData1()) + " (" + String(note) + ") - 0");
       handleNote(note, 0);
-      captureNoteOff[note] = false;
       break;
       
     case midi::PitchBend:

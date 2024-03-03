@@ -83,11 +83,11 @@
 // Debug
 #define DEBUG false
 #if DEBUG
-  #define ddbegin(x); Serial.begin(x);
-  #define dd(x); Serial.println(x);
+  #define debugBegin(x); Serial.begin(x);
+  #define debug(x); Serial.println(x);
 #else
-  #define ddbegin(x);
-  #define dd(x);
+  #define debugBegin(x);
+  #define debug(x);
 #endif
 
 // Global variables
@@ -95,8 +95,10 @@ int8_t (*noteCommand)(int);
 bool isCalibrationActive{false};
 float calibrationValue{CALIBRATION_DEFAULT};
 
+volatile bool gateOn{false};
 volatile bool addPitchBend{false};
 volatile bool notes[88] = {}; 
+volatile uint8_t lastNote{};
 volatile uint8_t notesOrder[NOTES_HISTORY]{};
 volatile uint8_t orderIndex{};
 volatile int8_t pitchBend{};
@@ -105,9 +107,11 @@ volatile uint16_t clockCount{};
 volatile uint32_t clockTimer{};
 volatile uint32_t clockTimeout{};
 volatile uint32_t triggerTimer{};
+volatile uint32_t gateStart{};
 
 MIDI_CREATE_DEFAULT_INSTANCE();
 
+// Makes the gate LED blink
 void blink(uint8_t times, bool fast = false) {
   for (uint8_t i = 0; i < times; i++) {
     digitalWrite(GATE, HIGH);
@@ -117,7 +121,8 @@ void blink(uint8_t times, bool fast = false) {
   }
 }
 
-int getMidiChannel() {
+// Returns the MIDI channel selected via the DIP switches
+uint8_t getMidiChannel() {
   uint8_t channel{1};
   uint8_t pins[]{MIDI_CHANNEL_4, MIDI_CHANNEL_3, MIDI_CHANNEL_2, MIDI_CHANNEL_1};
 
@@ -133,18 +138,9 @@ int getMidiChannel() {
   return channel;
 }
 
-int8_t highestNoteCommand(uint8_t note) {
-  for (uint8_t i = 87; i >= note; i--) {
-    if (notes[i]) {
-      return i;
-    }
-  }
-
-  return -1;
-}
-
+// Returns the highest note being played
 int8_t lowestNoteCommand(uint8_t note) {
-  for (uint8_t i = 0; i <= note; i++) {
+  for (uint8_t i = 0; i <= 87; i++) {
     if (notes[i]) {
       return i;
     }
@@ -153,7 +149,19 @@ int8_t lowestNoteCommand(uint8_t note) {
   return -1;
 }
 
-int8_t lastNodeCommand(uint8_t note) {
+// Returns the highest note being played
+int8_t highestNoteCommand(uint8_t note) {
+  for (uint8_t i = 87; i >= 0; i--) {
+    if (notes[i]) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+// Returns the latest note being played
+int8_t latestNoteCommand(uint8_t note) {
   int8_t noteIndex;
   
   for (uint8_t i = 0; i < NOTES_HISTORY; i++) {
@@ -168,20 +176,21 @@ int8_t lastNodeCommand(uint8_t note) {
   return -1;
 }
 
+// Selects the note priority based on the priority switch
 void initNotePriority() {
   pinMode(NOTE_PRIORITY_1, INPUT_PULLUP);
   pinMode(NOTE_PRIORITY_2, INPUT_PULLUP);
 
-  noteCommand = lastNodeCommand;
+  noteCommand = latestNoteCommand;
 
   if (!digitalRead(NOTE_PRIORITY_1)) {
     noteCommand = highestNoteCommand;
-    dd("Note priority : Highest");
+    debug("Note priority : Highest");
   } else if (!digitalRead(NOTE_PRIORITY_2)) {
     noteCommand = lowestNoteCommand;
-    dd("Note priority : Lowest");
+    debug("Note priority : Lowest");
   } else {
-    dd("Note priority : Latest");
+    debug("Note priority : Latest");
   }
 
   // Release internal pull-up resistor
@@ -189,9 +198,15 @@ void initNotePriority() {
   pinMode(NOTE_PRIORITY_2, INPUT);
 }
 
+/*
+ * Registers the interrupt for the pitch bend switch.
+ * When activated, the pitch bend value is also added to the note output.
+ * Otherwise it is only output via the pitch bend output.
+ */
 void initPitchBendSwitch() {
   pinMode(PITCH_BEND_SWITCH, INPUT_PULLUP);
 
+  // Read and store initial state
   addPitchBend = digitalRead(PITCH_BEND_SWITCH);
 
   // Attach an interrupt to add or remove pitch bend to note when the switch state changes
@@ -199,9 +214,9 @@ void initPitchBendSwitch() {
     addPitchBend = digitalRead(PITCH_BEND_SWITCH) == HIGH;
 
     if (addPitchBend) {
-      dd("Add pitch bend : enabled");
+      debug("Add pitch bend : enabled");
     } else {
-      dd("Add pitch bend : disabled");
+      debug("Add pitch bend : disabled");
     }
   }, CHANGE);
 
@@ -209,23 +224,45 @@ void initPitchBendSwitch() {
   handlePitchBend(64);
 }
 
-void handlePitchBend(int value) {
+/*
+ * Outputs the correct voltage for a specific pitch bend value.
+ * 
+ * Value from 0 to 127, mid point = 64.
+ * Pitch bend output from 0 to 1023 mV.
+ * Left shift value by 4 to scale from 0 to 2047.
+ * With DAC gain = 1X, this will yield a range from 0 to 1023 mV.
+ */
+void handlePitchBend(uint8_t value) {
   pitchBend = value - 64;
 
-  // Value from 0 to 127, mid point = 64
-  // Pitch bend output from 0 to 1023 mV.
-  // Left shift value by 4 to scale from 0 to 2047.
-  // With DAC gain = 1X, this will yield a range from 0 to 1023 mV.
   setVoltage(DAC_PIN_PITCH_BEND, DAC_CHAN_PITCH_BEND, DAC_GAIN_PITCH_BEND, value << 4);
 }
 
-void handleControlChange(int value) {
-  // Value from 0 to 127
-  // CC range from 0 to 4095 mV.
-  // Left shift value by 5 to scale from 0 to 4095, and choose gain = 2X.
+/*
+ * Outputs the correct voltage for a specific control change value.
+ * 
+ * Value from 0 to 127.
+ * CC range from 0 to 4095 mV.
+ * Left shift value by 5 to scale from 0 to 4095.
+ * With DAC gain = 2X, this will yield a range from 0 to 4095 mV.
+ */
+void handleControlChange(uint8_t value) {
   setVoltage(DAC_PIN_CONTROL_CHANGE, DAC_CHAN_CONTROL_CHANGE, DAC_GAIN_CONTROL_CHANGE, value << 5);
 }
 
+/*
+ * Outputs the correct voltage for a specific control change value.
+ * 
+ * Value from 0 to 127.
+ * Velocity range from 0 to 4095 mV.
+ * Left shift velocity by 5 to scale from 0 to 4095.
+ * With DAC gain = 2X, this will yield a range from 0 to 4095 mV.
+ */
+void handleVelocity(uint8_t value) {
+  setVoltage(DAC_PIN_VELOCITY, DAC_CHAN_VELOCITY, DAC_GAIN_VELOCITY, value << 5);
+}
+
+// Keeps track of clock signals
 void handleClock() {
   // Prevents Clock from starting in between quarter notes after clock is restarted!
   if (now > clockTimeout + 300) {
@@ -247,66 +284,69 @@ void handleClock() {
   }
 }
 
+// Returns the calibration potentiometer value. Used during the calibration process
 float getCalibrationPotValue() {
   float mappedValue = (analogRead(CALIBRATION_POT) * (CALIBRATION_MAX - CALIBRATION_MIN) / 1023.0) + CALIBRATION_MIN;
   return (round(mappedValue / 0.001) * 0.001);
 }
 
 /*
+ * Outputs a specific note.
+ * 
  * Rescale 88 notes to 4096 mV:
  *    noteMsg = 0 -> 0 mV 
  *    noteMsg = 87 -> 4096 mV
- * DAC output will be (4095/87) = 47.069 mV per note, and 564.9655 mV per octive
- * DAC output will be amplified by the op-amp by 1.77X for the standard 1V/octave
+ * DAC output will be (4095/87) = 47.069 mV per note, and 564.9655 mV per octive.
+ * DAC output will be amplified by the op-amp by 1.77X for the standard 1V/octave.
  */
-void outputNote(uint8_t noteNumber, bool useCalibrationPot = false) {
-  digitalWrite(GATE, HIGH);
+void outputNote(uint8_t note, bool useCalibrationPot = false) {
   digitalWrite(TRIG, HIGH);
 
   triggerTimer = now;
-  float calibrationMultiplier = useCalibrationPot ? getCalibrationPotValue() : calibrationValue;
-  uint16_t mV = (uint16_t) (float) (noteNumber * calibrationMultiplier + 0.5) + (addPitchBend ? pitchBend << 2 : 0);
 
-  dd("Note mV : " + String(mV));
+  if (lastNote != note || gateStart == 0) {
+    gateStart = now + (gateStart > 0 ? TRIGGER_DURATION : 0);
+    lastNote = note;
+  }
+
+  float calibrationMultiplier = useCalibrationPot ? getCalibrationPotValue() : calibrationValue;
+  uint16_t mV = (uint16_t) (float) (note * calibrationMultiplier + 0.5) + (addPitchBend ? pitchBend << 2 : 0);
+
+  debug("Note mV : " + String(mV));
   setVoltage(DAC_PIN_NOTE, DAC_CHAN_NOTE, DAC_GAIN_NOTE, mV);
 }
 
+// Gets and outputs the correct note based on the requested MIDI note and note priority
 void handleNote(uint8_t note, uint16_t velocity) {
   // Only 88 notes are supported
   if (note < 0 || note > 87) {
-    dd("Note " + String(note) + " out of range");
+    debug("Note " + String(note) + " out of range");
     return;
   }
 
-  notes[note] = false;
+  notes[note] = velocity > 0;
+  handleVelocity(velocity);
 
-  if (velocity > 0) {
-    notes[note] = true;
-
-    // Velocity range from 0 to 4095 mV.
-    // Left shift velocity by 5 to scale from 0 to 4095
-    setVoltage(DAC_PIN_VELOCITY, DAC_CHAN_VELOCITY, DAC_GAIN_VELOCITY, velocity << 5);
-  }
-
-  if (noteCommand == lastNodeCommand && notes[note]) {
+  if (noteCommand == latestNoteCommand && notes[note]) {
     orderIndex = (orderIndex + 1) % NOTES_HISTORY;
     notesOrder[orderIndex] = note;  
   }
 
   int noteOutput = noteCommand(note);
-  dd("Note : " + String(noteOutput));
+  debug("Note : " + String(noteOutput));
 
   if (noteOutput == -1) {
-    digitalWrite(GATE, LOW);
+    gateStart = 0;
     return;
   }
 
   outputNote(noteOutput);
 }
 
+// Calibration routine for a specific voltage
 float calibrateVoltage(uint8_t voltage) {
   blink(voltage);
-  dd("Adjust to " + String(voltage) + "V");
+  debug("Adjust to " + String(voltage) + "V");
 
   while (analogRead(CALIBRATION_SWITCH)) {
     outputNote(12 * voltage, true);
@@ -316,29 +356,35 @@ float calibrateVoltage(uint8_t voltage) {
   return getCalibrationPotValue();
 }
 
+/*
+ * Intializes calibration.
+ * If calibration is enabled, starts the full calibration routine and stores calibration result in EEPROM.
+ * If not, reads the calibration value from EEPROM.
+ *
+ * If the pitch bend switch is activated during the boot in claibration mode, the default calibration value is restored.
+ */
 void initCalibration() {
   pinMode(CALIBRATION_SWITCH, INPUT);
 
   if (!analogRead(CALIBRATION_SWITCH)) {
-    dd("Calibration : enabled");
+    debug("Calibration : enabled");
     blink(10, true);
     delay(3000);
 
     if (addPitchBend) {
-      dd("Reset calibration to default value : " + String(CALIBRATION_DEFAULT));
+      debug("Reset calibration to default value : " + String(CALIBRATION_DEFAULT));
       EEPROM.put(CALIBRATION_EEPROM, CALIBRATION_DEFAULT);
       blink(10, true);
       delay(3000);
     }
 
     float calibrationPoints[4]{};
+    float calibrationSum{};
 
     calibrationPoints[0] = calibrateVoltage(1);
     calibrationPoints[1] = calibrateVoltage(3);
     calibrationPoints[2] = calibrateVoltage(5);
     calibrationPoints[3] = calibrateVoltage(7);
-
-    float calibrationSum{};
 
     for (uint8_t i = 0; i < 4; i++) {
       calibrationSum += calibrationPoints[i];
@@ -348,22 +394,22 @@ void initCalibration() {
 
     // Save new calibration value in EEPROM
     EEPROM.put(CALIBRATION_EEPROM, calibrationValue);
-    dd("Calibration done, new value : " + String(calibrationValue));
+    debug("Calibration done, new value : " + String(calibrationValue));
 
     blink(10, true);
     return;
   }
 
-  dd("Calibration : disabled");
+  debug("Calibration : disabled");
   EEPROM.get(CALIBRATION_EEPROM, calibrationValue);
 
-  // Init the EEPROM with default value if empty
+  // Init the EEPROM with default value if empty (should only happen during first program run)
   if (isnan(calibrationValue) || calibrationValue < CALIBRATION_MIN || calibrationValue > CALIBRATION_MAX) {
     EEPROM.put(CALIBRATION_EEPROM, CALIBRATION_DEFAULT);
     calibrationValue = CALIBRATION_DEFAULT;
   }
 
-  dd("Calibration value : " + String(calibrationValue));
+  debug("Calibration value : " + String(calibrationValue));
 }
 
 /*
@@ -386,7 +432,8 @@ void setVoltage(uint8_t dacpin, uint16_t command, uint16_t gain, uint16_t mV) {
   SPI.endTransaction();
 }
 
-void setup() {pinMode(GATE, OUTPUT);
+void setup() {
+  pinMode(GATE, OUTPUT);
   pinMode(TRIG, OUTPUT);
   pinMode(CLOCK, OUTPUT);
   pinMode(DAC1, OUTPUT);
@@ -401,7 +448,7 @@ void setup() {pinMode(GATE, OUTPUT);
   SPI.begin();
   
   // MIDI baudrate
-  ddbegin(31250);
+  debugBegin(31250);
 
   uint8_t midiChannel = getMidiChannel();
 
@@ -409,8 +456,8 @@ void setup() {pinMode(GATE, OUTPUT);
   MIDI.turnThruOff();
 
   delay(300);
-  dd("Debug : enabled");
-  dd("MIDI channel : " + String(midiChannel));
+  debug("Debug : enabled");
+  debug("MIDI channel : " + String(midiChannel));
 
   initPitchBendSwitch();
   initCalibration();
@@ -419,6 +466,17 @@ void setup() {pinMode(GATE, OUTPUT);
 
 void loop() {
   now = millis();
+
+  // Handles gate output
+  if (!gateOn && gateStart > 0 && gateStart <= now) {
+    gateOn = true;
+    digitalWrite(GATE, HIGH);
+  }
+
+  if (gateOn && (gateStart == 0 || gateStart > now)) {
+    gateOn = false;
+    digitalWrite(GATE, LOW);
+  }
 
   // Set trigger low after TRIGGER_DURATION
   if ((triggerTimer > 0) && (now - triggerTimer > TRIGGER_DURATION)) { 
@@ -442,29 +500,29 @@ void loop() {
     case midi::NoteOn:
       note = MIDI.getData1() - 21;
 
-      dd("Note ON : " + String(MIDI.getData1()) + " (" + String(note) + ") - " + String(MIDI.getData2()));
+      debug("Note ON : " + String(MIDI.getData1()) + " (" + note + ") - " + String(MIDI.getData2()));
       handleNote(note, MIDI.getData2());
       break;
 
     case midi::NoteOff:
       note = MIDI.getData1() - 21;
 
-      dd("Note OFF : " + String(MIDI.getData1()) + " (" + String(note) + ") - 0");
+      debug("Note OFF : " + String(MIDI.getData1()) + " (" + String(note) + ") - 0");
       handleNote(note, 0);
       break;
       
     case midi::PitchBend:
-      dd("Pitch bend : " + String(MIDI.getData2()));
+      debug("Pitch bend : " + String(MIDI.getData2()));
       handlePitchBend(MIDI.getData2());      
       break;
 
     case midi::ControlChange:
-      dd("Control change : " + String(MIDI.getData2()));
+      debug("Control change : " + String(MIDI.getData2()));
       handleControlChange(MIDI.getData2());
       break;
       
     case midi::Clock:
-      dd("Clock : " + String(clockTimer) + " / " + String(clockCount));
+      debug("Clock : " + String(clockTimer) + " / " + String(clockCount));
       handleClock();
       break;
   }

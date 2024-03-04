@@ -454,8 +454,7 @@ void setup() {
 
   MIDI.begin(midiChannel);
   MIDI.turnThruOff();
-
-  delay(300);
+  
   debug("Debug : enabled");
   debug("MIDI channel : " + String(midiChannel));
 

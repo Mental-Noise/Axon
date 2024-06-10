@@ -63,7 +63,8 @@
 // Pulses duration and clock settings
 #define TRIGGER_DURATION 20
 #define CLOCK_DURATION 20
-#define CLOCK_PPQ 24
+#define CLOCK_PPQ 6
+
 #define NOTES_HISTORY 20
 
 // DAC configuration

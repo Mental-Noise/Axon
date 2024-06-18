@@ -50,6 +50,6 @@ To import the schematics:
 * Install EasyEDA at [https://easyeda.com/](https://easyeda.com/) and download the standard edition
 * Import the schematics in EasyEDA editor by clicking the document icon on the topbar, "Document" > "Open" > "EasyEDA Source", and select the json file
 
-![Mental Noise - Axon - Schematics](schematics/1_full.png "Mental Noise - Axon - Schematics")
+![Mental Noise - Axon - Schematics](schematics/schematics.png "Mental Noise - Axon - Schematics")
 
 Enjoy!

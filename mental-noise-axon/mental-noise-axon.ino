@@ -63,7 +63,7 @@
 // Pulses duration and clock settings
 #define TRIGGER_DURATION 20
 #define CLOCK_DURATION 20
-#define CLOCK_PPQ 6
+#define CLOCK_DIVISION 6
 
 #define NOTES_HISTORY 20
 
@@ -103,7 +103,6 @@ volatile uint8_t lastNote{};
 volatile uint8_t notesOrder[NOTES_HISTORY]{};
 volatile uint8_t orderIndex{};
 volatile int8_t pitchBend{};
-volatile uint16_t now{};
 volatile uint16_t clockCount{};
 volatile uint32_t clockTimer{};
 volatile uint32_t clockTimeout{};
@@ -265,22 +264,21 @@ void handleVelocity(uint8_t value) {
 
 // Keeps track of clock signals
 void handleClock() {
-  // Prevents Clock from starting in between quarter notes after clock is restarted!
-  if (now > clockTimeout + 300) {
+  if (millis() > clockTimeout + 300) {
     clockCount = 0;
   }
 
-  clockTimeout = now;
+  clockTimeout = millis();
   
   // Start clock pulse
   if (clockCount == 0) {
     digitalWrite(CLOCK, HIGH);
-    clockTimer = now;    
+    clockTimer = millis();    
   }
 
   clockCount++;
 
-  if (clockCount == CLOCK_PPQ) {
+  if (clockCount == CLOCK_DIVISION) {
     clockCount = 0;  
   }
 }
@@ -303,10 +301,10 @@ float getCalibrationPotValue() {
 void outputNote(uint8_t note, bool useCalibrationPot = false) {
   digitalWrite(TRIG, HIGH);
 
-  triggerTimer = now;
+  triggerTimer = millis();
 
   if (lastNote != note || gateStart == 0) {
-    gateStart = now + (gateStart > 0 ? TRIGGER_DURATION : 0);
+    gateStart = millis() + (gateStart > 0 ? TRIGGER_DURATION : 0);
     lastNote = note;
   }
 
@@ -465,27 +463,25 @@ void setup() {
 }
 
 void loop() {
-  now = millis();
-
   // Handles gate output
-  if (!gateOn && gateStart > 0 && gateStart <= now) {
-    gateOn = true;
-    digitalWrite(GATE, HIGH);
-  }
-
-  if (gateOn && (gateStart == 0 || gateStart > now)) {
+  if (gateOn && (gateStart == 0 || gateStart > millis())) {
     gateOn = false;
     digitalWrite(GATE, LOW);
   }
 
+  if (!gateOn && gateStart > 0 && gateStart <= millis()) {
+    gateOn = true;
+    digitalWrite(GATE, HIGH);
+  }
+
   // Set trigger low after TRIGGER_DURATION
-  if ((triggerTimer > 0) && (now - triggerTimer > TRIGGER_DURATION)) { 
+  if ((triggerTimer > 0) && (millis() - triggerTimer > TRIGGER_DURATION)) { 
     digitalWrite(TRIG, LOW);
     triggerTimer = 0;  
   }
 
   // Set clock pulse low after CLOCK_DURATION
-  if ((clockTimer > 0) && (now - clockTimer > CLOCK_DURATION)) { 
+  if ((clockTimer > 0) && (millis() - clockTimer > CLOCK_DURATION)) { 
     digitalWrite(CLOCK, LOW);
     clockTimer = 0;
   }

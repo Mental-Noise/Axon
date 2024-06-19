@@ -1,5 +1,7 @@
 # Mental Noise - Axon - MIDI to CV Eurorack module
 
+![Mental Noise - Axon](axon.jpg "Mental Noise - Axon")
+
 This repository contains the code and schematics (EasyEDA format) for the Mental Noise - Axon Eurorack module converting MIDI commands to CV signals you can use to control your Eurorack synth.
 
 I originally made this module to control my modular synth with an Arturia Keystep Pro.  

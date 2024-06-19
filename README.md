@@ -41,6 +41,10 @@ The note priority can be selected using a 3-way switch on the back of the module
 
 The note output can be calibrated using a trim pot accessible on the front of the module.
 
+## Documentation
+
+The detailed documentation / user manual can be found in [Mental Noise - Axon.pdf](https://github.com/Mental-Noise/Axon/blob/master/Mental%20Noise%20-%20Axon.pdf)
+
 ## Schematics
 
 All schematics are available in the [schematics folder](https://github.com/atulrnt/mental-noise-axon/tree/main/schematics).

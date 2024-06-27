@@ -151,7 +151,7 @@ int8_t lowestNoteCommand(uint8_t note) {
 
 // Returns the highest note being played
 int8_t highestNoteCommand(uint8_t note) {
-  for (uint8_t i = 87; i >= 0; i--) {
+  for (int8_t i = 87; i >= 0; i--) {
     if (notes[i]) {
       return i;
     }

@@ -45,17 +45,17 @@ The note output can be calibrated using a trim pot accessible on the front of th
 
 ## Documentation
 
-The detailed documentation / user manual can be found in [Mental Noise - Axon.pdf](https://github.com/Mental-Noise/Axon/blob/master/Mental%20Noise%20-%20Axon.pdf)
+The detailed documentation / user manual can be found in [Mental Noise - Axon.pdf](./Mental%20Noise%20-%20Axon.pdf)
 
 ## Schematics
 
-All schematics are available in the [schematics folder](https://github.com/atulrnt/mental-noise-axon/tree/main/schematics).
+All schematics are available in the [schematics folder](./schematics).
 
 To import the schematics:  
 
 * Install EasyEDA at [https://easyeda.com/](https://easyeda.com/) and download the standard edition
 * Import the schematics in EasyEDA editor by clicking the document icon on the topbar, "Document" > "Open" > "EasyEDA Source", and select the json file
 
-![Mental Noise - Axon - Schematics](schematics/schematics.png "Mental Noise - Axon - Schematics")
+![Mental Noise - Axon - Schematics](./schematics/schematics.png "Mental Noise - Axon - Schematics")
 
 Enjoy!
